@@ -1,0 +1,183 @@
+// Sutera — Database Schema
+//
+// Default provider is SQLite so the demo runs with zero external setup.
+// For production, switch provider to "postgresql" and point DATABASE_URL
+// at a Postgres instance — no other changes are required. Every field here
+// was written to be Postgres-compatible from day one.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NOTE ON ENUMS
+// --------------
+// SQLite (used here for zero-config local/demo setup) does not support
+// native Prisma `enum` types — only Postgres/MySQL do. So the "enum-like"
+// fields below (order status, payment status, payment method, product
+// status) are declared as `String` with a documented set of allowed
+// values, and are validated with Zod (see lib/validation.ts) at the API
+// boundary instead of at the database layer.
+//
+// If you switch `provider` to "postgresql", you can optionally convert
+// these back to real Prisma enums for extra database-level safety — it's
+// not required, just an option.
+//
+// Allowed values:
+//   OrderStatus:    PENDING | CONFIRMED | PROCESSING | SHIPPED | DELIVERED | CANCELLED
+//   PaymentStatus:  PENDING | PAID | FAILED | REFUNDED
+//   PaymentMethod:  RAZORPAY | COD
+//   ProductStatus:  ACTIVE | DRAFT | ARCHIVED
+
+model Admin {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id               String         @id @default(cuid())
+  slug             String         @unique
+  name             String
+  shortDescription String
+  description      String
+  price            Int // stored in paise (INR minor unit) — e.g. 149900 = ₹1,499.00
+  mrp              Int
+  stock            Int            @default(0)
+  material         String?
+  dimensions       String?
+  firmness         String?
+  sleepPosition    String?
+  weight           String?
+  coverType        String?
+  status           String         @default("ACTIVE") // ACTIVE | DRAFT | ARCHIVED
+  seoTitle         String?
+  seoDescription   String?
+  rating           Float          @default(4.7)
+  reviewCount      Int            @default(0)
+  categoryId       String?
+  category         Category?      @relation(fields: [categoryId], references: [id])
+  images           ProductImage[]
+  benefits         ProductBenefit[]
+  faqs             ProductFaq[]
+  reviews          Review[]
+  orderItems       OrderItem[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String
+  position  Int     @default(0)
+}
+
+model ProductBenefit {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title     String
+  detail    String
+  position  Int     @default(0)
+}
+
+model ProductFaq {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  position  Int     @default(0)
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customer   String
+  rating     Int
+  title      String
+  body       String
+  isDemo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  orderNumber   String        @unique
+  customerName  String
+  email         String
+  phone         String
+  address       String
+  city          String
+  state         String
+  pincode       String
+  items         OrderItem[]
+  subtotal      Int
+  shipping      Int
+  discount      Int           @default(0)
+  total         Int
+  paymentMethod String        @default("RAZORPAY") // RAZORPAY | COD
+  paymentStatus String        @default("PENDING")  // PENDING | PAID | FAILED | REFUNDED
+  orderStatus   String        @default("PENDING")  // PENDING | CONFIRMED | PROCESSING | SHIPPED | DELIVERED | CANCELLED
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  statusHistory StatusEvent[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([phone])
+}
+
+model StatusEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    String // one of OrderStatus values — see note above
+  note      String?
+  createdAt DateTime    @default(now())
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  productName String
+  image       String?
+  price       Int
+  quantity    Int
+}
+
+model SiteSetting {
+  id                   String  @id @default("singleton")
+  brandName            String  @default("Sutera")
+  supportEmail         String  @default("hello@sutera.demo")
+  supportPhone         String  @default("+91 98765 43210")
+  whatsappNumber       String  @default("+91 98765 43210")
+  shippingCharge       Int     @default(0)
+  freeShippingThreshold Int    @default(99900)
+  codEnabled           Boolean @default(true)
+  storeOnline          Boolean @default(true)
+  announcement         String  @default("Free shipping on orders above ₹999")
+}
